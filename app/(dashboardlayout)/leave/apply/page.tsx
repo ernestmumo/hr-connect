@@ -13,6 +13,7 @@ import {
   Eye,
   Pencil,
 } from "lucide-react";
+
 import {
   DEFAULT_LEAVE_DRAFT,
   deleteLeaveDraft,
@@ -27,6 +28,10 @@ import {
   VALIDATION_RULES,
   type LeaveDraft,
 } from "@/lib/leave-store";
+
+// 1. ADDED DATABASE IMPORTS: Pulls the central employee directory
+import { getAllEmployees } from "@/lib/storage";
+import { employees as seedEmployees, type Employee } from "@/lib/mock-data";
 
 export default function ApplyForLeavePage() {
   return (
@@ -51,9 +56,15 @@ function ApplyForLeaveContent() {
   const isReadOnly = isViewDraft;
   const isNewApplication = !draftId;
 
-  const [savedSnapshot, setSavedSnapshot] = useState<LeaveDraft>(DEFAULT_LEAVE_DRAFT);
-  const [employeeName, setEmployeeName] = useState("");
-  const [employeeRole, setEmployeeRole] = useState("");
+  // 2. ACTIVE EMPLOYEES STATE: Stores the live directory array for the dropdown
+  const [activeEmployees, setActiveEmployees] = useState<Employee[]>([]);
+
+  const [savedSnapshot, setSavedSnapshot] =
+    useState<LeaveDraft>(DEFAULT_LEAVE_DRAFT);
+
+  // 3. RELATIONAL FOREIGN KEY STATE: We replaced employeeName and employeeRole with employeeId
+  const [employeeId, setEmployeeId] = useState("");
+
   const [leaveType, setLeaveType] = useState("");
   const [urgency, setUrgency] = useState("Standard");
   const [startDate, setStartDate] = useState("");
@@ -63,13 +74,14 @@ function ApplyForLeaveContent() {
   const [isLoaded, setIsLoaded] = useState(false);
   const [lastUpdated, setLastUpdated] = useState("Today, 09:42 AM");
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(
+    null,
+  );
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
 
   const applyDraft = useCallback((draft: LeaveDraft) => {
-    setEmployeeName(draft.employeeName);
-    setEmployeeRole(draft.employeeRole);
+    setEmployeeId(draft.employeeId || ""); // Map foreign key
     setLeaveType(draft.leaveType);
     setUrgency(draft.urgency);
     setStartDate(draft.startDate);
@@ -80,6 +92,9 @@ function ApplyForLeaveContent() {
   }, []);
 
   useEffect(() => {
+    // 4. LOAD THE GLOBAL DIRECTORY ON MOUNT
+    setActiveEmployees(getAllEmployees(seedEmployees));
+
     initializeLeaveDraftStorage();
 
     if (isViewDraft && !draftId) {
@@ -104,10 +119,13 @@ function ApplyForLeaveContent() {
     setIsLoaded(true);
   }, [applyDraft, draftId, isViewDraft, router]);
 
+  // 5. AUTO-POPULATE HOOK: Finds the currently selected employee and extracts their role
+  const selectedEmployeeObj = activeEmployees.find((e) => e.id === employeeId);
+  const derivedRole = selectedEmployeeObj?.role || "";
+
   const getCurrentForm = useCallback(
     (): LeaveDraft => ({
-      employeeName,
-      employeeRole,
+      employeeId,
       leaveType,
       urgency,
       startDate,
@@ -115,16 +133,7 @@ function ApplyForLeaveContent() {
       reason,
       uploadedFile,
     }),
-    [
-      employeeName,
-      employeeRole,
-      leaveType,
-      urgency,
-      startDate,
-      endDate,
-      reason,
-      uploadedFile,
-    ],
+    [employeeId, leaveType, urgency, startDate, endDate, reason, uploadedFile],
   );
 
   const checkIsFormDirty = useCallback(() => {
@@ -164,7 +173,9 @@ function ApplyForLeaveContent() {
       router.replace(`/leave/apply?draft=${savedId}`);
     }
 
-    window.alert("Draft saved. You can return to finish this application later.");
+    window.alert(
+      "Draft saved. You can return to finish this application later.",
+    );
     return true;
   }, [getCurrentForm, draftId, router]);
 
@@ -173,7 +184,9 @@ function ApplyForLeaveContent() {
       e?.preventDefault();
 
       const payload = isReadOnly
-        ? (draftId ? getLeaveDraftById(draftId)?.data : null)
+        ? draftId
+          ? getLeaveDraftById(draftId)?.data
+          : null
         : getCurrentForm();
 
       if (!payload) {
@@ -314,9 +327,7 @@ function ApplyForLeaveContent() {
   const isDirty = !isReadOnly && checkIsFormDirty();
   const activeSavedDraft = draftId ? getLeaveDraftById(draftId) : null;
   const savedDraftExists = Boolean(activeSavedDraft);
-  const draftUpdatedLabel = draftId
-    ? getLeaveDraftUpdatedLabel(draftId)
-    : null;
+  const draftUpdatedLabel = draftId ? getLeaveDraftUpdatedLabel(draftId) : null;
   const viewDraftEmpty = isViewDraft && !savedDraftExists;
   const pageTitle = isViewDraft
     ? "Saved Leave Draft"
@@ -465,66 +476,66 @@ function ApplyForLeaveContent() {
             className="bg-white p-6 rounded-xl border border-slate-100 shadow-sm flex flex-col space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-200"
           >
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* 6. DYNAMIC EMPLOYEE SELECTOR (Replaces text input) */}
               <div className="space-y-1.5">
                 <label
-                  htmlFor="employeeName"
+                  htmlFor="employeeId"
                   className="text-xs font-bold uppercase tracking-wider text-slate-400"
                 >
-                  Employee Name *
+                  Employee *
                 </label>
-                <input
-                  id="employeeName"
-                  type="text"
-                  required
-                  readOnly={isReadOnly}
-                  value={employeeName}
-                  onChange={(e) => {
-                    setEmployeeName(e.target.value);
-                    clearFieldError("employeeName");
-                  }}
-                  placeholder="e.g., Elena Rodriguez"
-                  className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/50 font-semibold text-slate-700 ${
-                    fieldErrors.employeeName
-                      ? "border-rose-300 focus:border-rose-500"
-                      : "border-slate-200"
-                  } ${isReadOnly ? "cursor-default bg-slate-50" : ""}`}
-                />
-                {fieldErrors.employeeName && (
+                <div className="relative">
+                  <select
+                    id="employeeId"
+                    required
+                    disabled={isReadOnly}
+                    value={employeeId}
+                    onChange={(e) => {
+                      setEmployeeId(e.target.value);
+                      clearFieldError("employeeId" as keyof LeaveDraft);
+                    }}
+                    className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/50 cursor-pointer appearance-none font-semibold text-slate-700 ${
+                      fieldErrors.employeeId
+                        ? "border-rose-300 focus:border-rose-500"
+                        : "border-slate-200"
+                    } ${isReadOnly ? "cursor-default bg-slate-50" : ""}`}
+                  >
+                    <option value="" disabled>
+                      Select an employee...
+                    </option>
+                    {activeEmployees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>
+                        {emp.name}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="absolute right-3 top-3 text-slate-400 pointer-events-none">
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
+                </div>
+                {fieldErrors.employeeId && (
                   <p className="text-[11px] font-semibold text-rose-600">
-                    {fieldErrors.employeeName}
+                    {fieldErrors.employeeId}
                   </p>
                 )}
               </div>
 
+              {/* 7. AUTO-POPULATED READ-ONLY ROLE FIELD */}
               <div className="space-y-1.5">
                 <label
                   htmlFor="employeeRole"
                   className="text-xs font-bold uppercase tracking-wider text-slate-400"
                 >
-                  Job Title *
+                  Job Title
                 </label>
                 <input
                   id="employeeRole"
                   type="text"
-                  required
-                  readOnly={isReadOnly}
-                  value={employeeRole}
-                  onChange={(e) => {
-                    setEmployeeRole(e.target.value);
-                    clearFieldError("employeeRole");
-                  }}
-                  placeholder="e.g., Product Designer"
-                  className={`w-full px-3.5 py-2.5 text-sm border rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/50 font-semibold text-slate-700 ${
-                    fieldErrors.employeeRole
-                      ? "border-rose-300 focus:border-rose-500"
-                      : "border-slate-200"
-                  } ${isReadOnly ? "cursor-default bg-slate-50" : ""}`}
+                  readOnly
+                  value={derivedRole}
+                  placeholder="Auto-populated from directory"
+                  className="w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-lg focus:outline-none bg-slate-100 font-semibold text-slate-500 cursor-not-allowed"
                 />
-                {fieldErrors.employeeRole && (
-                  <p className="text-[11px] font-semibold text-rose-600">
-                    {fieldErrors.employeeRole}
-                  </p>
-                )}
               </div>
             </div>
 
@@ -686,7 +697,8 @@ function ApplyForLeaveContent() {
               <div className="flex items-baseline justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
                 <label htmlFor="reason">Reason for Leave *</label>
                 <span className="text-[10px] text-slate-400 font-semibold lowercase">
-                  {reason.trim().length} / 2000 · min {VALIDATION_RULES.reasonMin}
+                  {reason.trim().length} / 2000 · min{" "}
+                  {VALIDATION_RULES.reasonMin}
                 </span>
               </div>
               <textarea
@@ -976,7 +988,9 @@ function ApplyForLeaveContent() {
       {showUnsavedModal && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-md rounded-xl border border-slate-100 shadow-xl p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Unsaved Changes</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              Unsaved Changes
+            </h3>
             <p className="text-sm text-slate-500 leading-relaxed">
               You have unsaved changes on this leave application. Save your
               draft before leaving, or discard the changes and continue.

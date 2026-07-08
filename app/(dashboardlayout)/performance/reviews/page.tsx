@@ -2,7 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ChevronRight, ClipboardList, Eye, Pencil } from "lucide-react";
+import {
+  ArrowLeft,
+  ChevronRight,
+  ClipboardList,
+  Eye,
+  Pencil,
+} from "lucide-react";
 import {
   getEmployees,
   getReviewMeta,
@@ -32,7 +38,10 @@ export default function PerformanceReviewsListPage() {
     migrateLegacyReviewStorage();
     const employees = getEmployees();
     const map = Object.fromEntries(
-      employees.map((employee) => [employee.id, getReviewMeta(employee.id).status]),
+      employees.map((employee) => [
+        employee.id,
+        getReviewMeta(employee.id).status,
+      ]),
     ) as Record<string, ReviewStatus>;
     setStatusMap(map);
 
@@ -54,14 +63,6 @@ export default function PerformanceReviewsListPage() {
 
   return (
     <div className="min-h-screen bg-slate-50 p-6 md:p-8 space-y-6 text-slate-900">
-      {/* <Link
-        href="/performance"
-        className="flex items-center gap-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition-colors cursor-pointer group w-fit"
-      >
-        <ArrowLeft className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" />
-        <span>Back to performance overview</span>
-      </Link> */}
-
       <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
         <Link
           href="/performance"
@@ -80,7 +81,8 @@ export default function PerformanceReviewsListPage() {
           </h1>
           <p className="text-sm text-slate-500 max-w-2xl leading-relaxed">
             Select an employee to open or continue their performance review.
-            Saved drafts can be viewed read-only before you submit the final review.
+            Saved drafts can be viewed read-only before you submit the final
+            review.
           </p>
         </div>
         <div className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg text-xs font-semibold text-blue-700">

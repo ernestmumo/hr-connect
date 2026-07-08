@@ -1,3 +1,7 @@
+// 1. ADDED IMPORTS: We import your central DB reader and the seed data array
+import { getAllEmployees } from "@/lib/storage";
+import { employees as seedEmployees } from "@/lib/mock-data";
+
 export type ReviewStatus =
   | "Not Started"
   | "Draft Saved"
@@ -45,7 +49,9 @@ export type ReviewMeta = {
   submittedAt?: string;
 };
 
-export type FieldErrors = Partial<Record<keyof ReviewFormData | "ratings", string>>;
+export type FieldErrors = Partial<
+  Record<keyof ReviewFormData | "ratings", string>
+>;
 
 export const GOALS_STORAGE_KEY = "hr_connect_goals";
 export const REVIEW_DRAFTS_KEY = "hr_connect_review_drafts";
@@ -199,7 +205,9 @@ function writeJson(key: string, value: unknown) {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function normalizeGoal(goal: Partial<DepartmentGoal> & { id: string }): DepartmentGoal {
+function normalizeGoal(
+  goal: Partial<DepartmentGoal> & { id: string },
+): DepartmentGoal {
   return {
     id: goal.id,
     status: (goal.status as DepartmentGoal["status"]) ?? "IN PROGRESS",
@@ -210,17 +218,67 @@ function normalizeGoal(goal: Partial<DepartmentGoal> & { id: string }): Departme
   };
 }
 
+// 2. THE DATA BRIDGE: Fetches global directory database and translates it into the Performance schema
 export function getEmployees(): Employee[] {
-  return DEFAULT_EMPLOYEES;
+  // Fetch the unified global employee list from Local Storage
+  const globalEmployees = getAllEmployees(seedEmployees);
+
+  // Map the global profiles into the Performance-specific schema
+  return globalEmployees.map((globalEmp) => {
+    // Check if we have default fallback metrics for this specific ID (for our mock data)
+    const defaults = DEFAULT_EMPLOYEES.find((e) => e.id === globalEmp.id);
+
+    // Compute fallback initials if not provided by the directory
+    const initials =
+      globalEmp.avatarInitials ??
+      globalEmp.name
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join("")
+        .substring(0, 2)
+        .toUpperCase();
+
+    // Compute deterministic avatar background colors for newly onboarded employees
+    const bgColors = [
+      "bg-blue-100 text-blue-800",
+      "bg-purple-100 text-purple-800",
+      "bg-emerald-100 text-emerald-800",
+      "bg-rose-100 text-rose-800",
+      "bg-amber-100 text-amber-800",
+    ];
+    const avatarBg =
+      defaults?.avatarBg ?? bgColors[globalEmp.name.length % bgColors.length];
+
+    return {
+      id: globalEmp.id,
+      name: globalEmp.name,
+      role: globalEmp.role,
+      initials: initials,
+      avatarBg: avatarBg,
+      department: globalEmp.department,
+      reviewer: defaults?.reviewer ?? "System Administrator",
+      dueDate: defaults?.dueDate ?? "Dec 31, 2026", // Default date for new employees
+      lastReview: defaults?.lastReview ?? "Pending",
+      defaultScore: defaults?.defaultScore ?? 0,
+      defaultProgress: defaults?.defaultProgress ?? 0,
+    };
+  });
 }
 
+// 3. REDIRECTED LOOKUP: Now searches the dynamically generated, globally-synced list
 export function getEmployeeById(employeeId: string): Employee | undefined {
-  return DEFAULT_EMPLOYEES.find((employee) => employee.id === employeeId);
+  return getEmployees().find((employee) => employee.id === employeeId);
 }
 
 export function getGoals(): DepartmentGoal[] {
-  const saved = readJson<Partial<DepartmentGoal>[]>(GOALS_STORAGE_KEY, DEFAULT_GOALS);
-  return saved.map((goal) => normalizeGoal(goal as Partial<DepartmentGoal> & { id: string }));
+  const saved = readJson<Partial<DepartmentGoal>[]>(
+    GOALS_STORAGE_KEY,
+    DEFAULT_GOALS,
+  );
+  return saved.map((goal) =>
+    normalizeGoal(goal as Partial<DepartmentGoal> & { id: string }),
+  );
 }
 
 export function saveGoals(goals: DepartmentGoal[]) {
@@ -257,7 +315,9 @@ export function unassignEmployeeFromGoal(goalId: string, employeeId: string) {
     if (goal.id !== goalId) return goal;
     return {
       ...goal,
-      assignedEmployeeIds: goal.assignedEmployeeIds.filter((id) => id !== employeeId),
+      assignedEmployeeIds: goal.assignedEmployeeIds.filter(
+        (id) => id !== employeeId,
+      ),
     };
   });
   saveGoals(goals);
@@ -274,7 +334,9 @@ export function setGoalAssignments(goalId: string, employeeIds: string[]) {
 }
 
 export function getEmployeeAssignedGoals(employeeId: string) {
-  return getGoals().filter((goal) => goal.assignedEmployeeIds.includes(employeeId));
+  return getGoals().filter((goal) =>
+    goal.assignedEmployeeIds.includes(employeeId),
+  );
 }
 
 export function getEmployeeGoalProgress(employeeId: string) {
@@ -356,7 +418,8 @@ export function submitFinalReview(employeeId: string, data: ReviewFormData) {
   writeJson(REVIEW_FINAL_KEY, finals);
 
   const drafts = getAllDrafts();
-  drafts[employeeId] = cloneReviewForm(data);
+  // FIXED: Delete the draft from memory instead of saving a new copy
+  delete drafts[employeeId];
   writeJson(REVIEW_DRAFTS_KEY, drafts);
 
   const meta = getAllReviewMeta();
@@ -476,13 +539,17 @@ export function validateReviewForm(
 
   if (!form.achievements.trim()) {
     errors.achievements = "Key achievements are required.";
-  } else if (form.achievements.trim().length < VALIDATION_RULES.achievementsMin) {
+  } else if (
+    form.achievements.trim().length < VALIDATION_RULES.achievementsMin
+  ) {
     errors.achievements = `Key achievements must be at least ${VALIDATION_RULES.achievementsMin} characters.`;
   }
 
   if (!form.improvements.trim()) {
     errors.improvements = "Areas for improvement are required.";
-  } else if (form.improvements.trim().length < VALIDATION_RULES.improvementsMin) {
+  } else if (
+    form.improvements.trim().length < VALIDATION_RULES.improvementsMin
+  ) {
     errors.improvements = `Areas for improvement must be at least ${VALIDATION_RULES.improvementsMin} characters.`;
   }
 
@@ -491,7 +558,8 @@ export function validateReviewForm(
     form.futureGoal.trim() &&
     form.futureGoal.trim().length < 10
   ) {
-    errors.futureGoal = "Future goal must be at least 10 characters if provided.";
+    errors.futureGoal =
+      "Future goal must be at least 10 characters if provided.";
   }
 
   return { isValid: Object.keys(errors).length === 0, errors };
@@ -514,11 +582,7 @@ export function isNarrativeComplete(form: ReviewFormData) {
 }
 
 export function getSubmissionProgress(form: ReviewFormData) {
-  const sections = [
-    true,
-    isRatingsComplete(form),
-    isNarrativeComplete(form),
-  ];
+  const sections = [true, isRatingsComplete(form), isNarrativeComplete(form)];
   const completed = sections.filter(Boolean).length;
   return Math.round((completed / sections.length) * 100);
 }
@@ -540,7 +604,10 @@ export function migrateLegacyReviewStorage() {
 
     Object.entries(parsed).forEach(([employeeId, data]) => {
       if (!drafts[employeeId]) {
-        drafts[employeeId] = cloneReviewForm({ ...DEFAULT_REVIEW_FORM, ...data });
+        drafts[employeeId] = cloneReviewForm({
+          ...DEFAULT_REVIEW_FORM,
+          ...data,
+        });
         meta[employeeId] = {
           status: "Draft Saved",
           updatedAt: new Date().toISOString(),

@@ -19,7 +19,9 @@ export function saveEmployee(employee: Employee) {
   const existingIndex = current.findIndex((item) => item.id === employee.id);
   const next =
     existingIndex >= 0
-      ? current.map((item, index) => (index === existingIndex ? employee : item))
+      ? current.map((item, index) =>
+          index === existingIndex ? employee : item,
+        )
       : [...current, employee];
 
   localStorage.setItem(NEW_EMPLOYEES_KEY, JSON.stringify(next));

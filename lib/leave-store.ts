@@ -1,6 +1,10 @@
+// 1. DATABASE BRIDGE IMPORTS: Pulls your central employee directory
+import { getAllEmployees } from "@/lib/storage";
+import { employees as seedEmployees } from "@/lib/mock-data";
+
+// 2. UPDATED DRAFT SCHEMA: We replaced employeeName and employeeRole with employeeId
 export type LeaveDraft = {
-  employeeName: string;
-  employeeRole: string;
+  employeeId: string; // Relational foreign key pointer
   leaveType: string;
   urgency: string;
   startDate: string;
@@ -16,12 +20,30 @@ export type SavedLeaveDraft = {
   updatedAt: string;
 };
 
+// 3. INTERNAL STORAGE SCHEMA: What we actually save to Local Storage (No names or roles!)
+export type StoredLeaveRequest = {
+  id: string;
+  employeeId: string; // Relational foreign key
+  leaveType: string;
+  typeColor: string;
+  dates: string;
+  duration: string;
+  status: string;
+  // Legacy fields retained temporarily so old mock data doesn't crash during migration
+  name?: string;
+  role?: string;
+  initials?: string;
+  avatarBg?: string;
+};
+
+// 4. HYDRATED UI SCHEMA: What we send to your Dashboard Table to render
 export type LeaveRequest = {
   id: string;
-  name: string;
-  role: string;
-  initials: string;
-  avatarBg: string;
+  employeeId: string;
+  name: string; // Injected dynamically from central DB
+  role: string; // Injected dynamically from central DB
+  initials: string; // Injected dynamically from central DB
+  avatarBg: string; // Injected dynamically from central DB
   leaveType: string;
   typeColor: string;
   dates: string;
@@ -40,8 +62,7 @@ const LEGACY_LEAVE_DRAFT_KEY = "hr_connect_leave_draft";
 const LEGACY_LEAVE_META_KEY = "hr_connect_leave_meta";
 
 export const DEFAULT_LEAVE_DRAFT: LeaveDraft = {
-  employeeName: "",
-  employeeRole: "",
+  employeeId: "", // Starts blank, waiting for dropdown selection
   leaveType: "",
   urgency: "Standard",
   startDate: "",
@@ -51,8 +72,6 @@ export const DEFAULT_LEAVE_DRAFT: LeaveDraft = {
 };
 
 export const VALIDATION_RULES = {
-  employeeNameMin: 2,
-  employeeRoleMin: 3,
   reasonMin: 30,
 } as const;
 
@@ -62,6 +81,7 @@ const AVATAR_BACKGROUNDS = [
   "bg-emerald-100 text-emerald-800",
   "bg-slate-200 text-slate-800",
   "bg-rose-100 text-rose-800",
+  "bg-amber-100 text-amber-800",
 ];
 
 export const LEAVE_TYPE_MAP: Record<
@@ -107,8 +127,8 @@ function saveAllLeaveDrafts(drafts: SavedLeaveDraft[]) {
 
 export function isLeaveDraftEmpty(form: LeaveDraft) {
   return (
-    !form.employeeName.trim() &&
-    !form.employeeRole.trim() &&
+    !form.employeeId &&
+    !(form as any).employeeName && // Legacy check
     !form.leaveType &&
     !form.startDate &&
     !form.endDate &&
@@ -161,17 +181,26 @@ export function getLeaveDraftUpdatedLabel(draftId: string): string | null {
   return formatLeaveUpdatedAt(draft.updatedAt) || null;
 }
 
+// 5. HYDRATION: Translates Draft objects for the dashboard previews using real-time employee lookup
 export function getLeaveDraftSummary(draft: SavedLeaveDraft): {
   title: string;
   subtitle: string;
   datesLabel: string | null;
 } {
   const { data } = draft;
-  const name = data.employeeName.trim() || "Untitled application";
+  const allEmployees = getAllEmployees(seedEmployees);
+
+  // Find employee by ID, or fallback to legacy hardcoded name
+  const legacyName = (data as any).employeeName;
+  const employee =
+    allEmployees.find((e) => e.id === data.employeeId) ||
+    allEmployees.find((e) => e.name === legacyName);
+
+  const name = employee?.name || legacyName || "Untitled application";
   const typeLabel = data.leaveType
     ? (LEAVE_TYPE_MAP[data.leaveType]?.label ?? data.leaveType)
     : "Leave type not set";
-  const role = data.employeeRole.trim();
+  const role = employee?.role || (data as any).employeeRole || "";
 
   let datesLabel: string | null = null;
   if (data.startDate && data.endDate) {
@@ -224,24 +253,15 @@ export function deleteLeaveDraft(draftId: string) {
   saveAllLeaveDrafts(drafts);
 }
 
+// 6. VALIDATION UPDATE: Ensure employeeId is captured instead of text fields
 export function validateLeaveForm(form: LeaveDraft): {
   isValid: boolean;
   errors: FieldErrors;
 } {
   const errors: FieldErrors = {};
 
-  const name = form.employeeName.trim();
-  if (!name) {
-    errors.employeeName = "Employee name is required.";
-  } else if (name.length < VALIDATION_RULES.employeeNameMin) {
-    errors.employeeName = `Enter at least ${VALIDATION_RULES.employeeNameMin} characters.`;
-  }
-
-  const role = form.employeeRole.trim();
-  if (!role) {
-    errors.employeeRole = "Job title is required.";
-  } else if (role.length < VALIDATION_RULES.employeeRoleMin) {
-    errors.employeeRole = `Enter at least ${VALIDATION_RULES.employeeRoleMin} characters for the job title.`;
+  if (!form.employeeId) {
+    errors.employeeId = "Please select an employee from the directory.";
   }
 
   if (!form.leaveType) {
@@ -275,20 +295,8 @@ export function validateLeaveForm(form: LeaveDraft): {
   return { isValid: Object.keys(errors).length === 0, errors };
 }
 
-export function getInitials(name: string) {
-  return name
-    .trim()
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0].toUpperCase())
-    .join("");
-}
-
 export function pickAvatarBg(name: string) {
-  const index =
-    name.split("").reduce((sum, char) => sum + char.charCodeAt(0), 0) %
-    AVATAR_BACKGROUNDS.length;
+  const index = name.length % AVATAR_BACKGROUNDS.length;
   return AVATAR_BACKGROUNDS[index];
 }
 
@@ -310,18 +318,54 @@ export function calculateDuration(start: string, end: string) {
   return days === 1 ? "1 Day" : `${days} Days`;
 }
 
+// 7. REAL-TIME HYDRATION ENGINE: Combines Local Storage Leave IDs with active Profile Database
 export function getLeaveRequests(): LeaveRequest[] {
-  return readJson<LeaveRequest[]>(LEAVE_REQUESTS_KEY, []);
+  const stored = readJson<StoredLeaveRequest[]>(LEAVE_REQUESTS_KEY, []);
+  const allEmployees = getAllEmployees(seedEmployees);
+
+  return stored.map((req) => {
+    // Locate the matching employee profile in real-time
+    const employee =
+      allEmployees.find((e) => e.id === req.employeeId) ||
+      allEmployees.find((e) => e.name === req.name);
+
+    // Dynamically calculate fresh avatar data based on active name
+    const computedName = employee?.name || req.name || "Unknown Employee";
+    const initials =
+      employee?.avatarInitials ??
+      computedName
+        .split(/\s+/)
+        .filter(Boolean)
+        .map((n) => n[0])
+        .join("")
+        .substring(0, 2)
+        .toUpperCase();
+    const avatarBg = employee
+      ? pickAvatarBg(employee.name)
+      : req.avatarBg || "bg-slate-200 text-slate-800";
+
+    return {
+      id: req.id,
+      employeeId: employee?.id || req.employeeId || "unknown",
+      name: computedName, // DYNAMIC: Always current name
+      role: employee?.role || req.role || "", // DYNAMIC: Always current role
+      initials,
+      avatarBg,
+      leaveType: req.leaveType,
+      typeColor: req.typeColor,
+      dates: req.dates,
+      duration: req.duration,
+      status: req.status,
+    };
+  });
 }
 
-export function buildLeaveRequest(data: LeaveDraft): LeaveRequest {
+// 8. RELATIONAL BUILDER: Writes ONLY the relational ID to the database when submitting
+export function buildLeaveRequest(data: LeaveDraft): StoredLeaveRequest {
   const typeMeta = LEAVE_TYPE_MAP[data.leaveType];
   return {
     id: `req-${Date.now()}`,
-    name: data.employeeName.trim(),
-    role: data.employeeRole.trim(),
-    initials: getInitials(data.employeeName),
-    avatarBg: pickAvatarBg(data.employeeName),
+    employeeId: data.employeeId, // Relational pointer
     leaveType: typeMeta?.label ?? data.leaveType,
     typeColor: typeMeta?.typeColor ?? "bg-slate-400",
     dates: formatDateRange(data.startDate, data.endDate),
@@ -335,14 +379,16 @@ export function submitLeaveRequest(
   draftId?: string | null,
 ): LeaveRequest {
   const newRequest = buildLeaveRequest(data);
-  const existing = getLeaveRequests();
+  const existing = readJson<StoredLeaveRequest[]>(LEAVE_REQUESTS_KEY, []);
+
   writeJson(LEAVE_REQUESTS_KEY, [newRequest, ...existing]);
 
   if (draftId) {
     deleteLeaveDraft(draftId);
   }
 
-  return newRequest;
+  // Return hydrated request for immediate UI rendering if needed
+  return getLeaveRequests().find((r) => r.id === newRequest.id) as LeaveRequest;
 }
 
 function migrateLegacyLeaveDraft() {
@@ -357,7 +403,7 @@ function migrateLegacyLeaveDraft() {
   }
 
   const merged = { ...DEFAULT_LEAVE_DRAFT, ...legacy };
-  if (isLeaveDraftEmpty(merged)) {
+  if (isLeaveDraftEmpty(merged as LeaveDraft)) {
     localStorage.removeItem(LEGACY_LEAVE_DRAFT_KEY);
     localStorage.removeItem(LEGACY_LEAVE_META_KEY);
     return;
@@ -372,7 +418,7 @@ function migrateLegacyLeaveDraft() {
 
   drafts.push({
     id: createDraftId(),
-    data: merged,
+    data: merged as LeaveDraft,
     createdAt: timestamp,
     updatedAt: timestamp,
   });
@@ -386,14 +432,12 @@ export function initializeLeaveDraftStorage() {
   migrateLegacyLeaveDraft();
 }
 
-/** @deprecated Use getLeaveDraftById */
 export function getLeaveDraft(): LeaveDraft {
   const drafts = getLeaveDrafts();
   if (drafts.length === 0) return cloneDraft(DEFAULT_LEAVE_DRAFT);
   return cloneDraft(drafts[0].data);
 }
 
-/** @deprecated Use deleteLeaveDraft with an id */
 export function clearLeaveDraft() {
   saveAllLeaveDrafts([]);
 }

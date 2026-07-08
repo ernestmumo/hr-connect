@@ -14,111 +14,71 @@ import {
   ChevronRight,
   Eye,
   Pencil,
+  AlertCircle, // Imported for the suspended account warning
 } from "lucide-react";
 import {
   deleteLeaveDraft,
   formatLeaveUpdatedAt,
-  getLeaveDrafts,
   getLeaveDraftSummary,
   getLeaveRequests,
   initializeLeaveDraftStorage,
   LEAVE_REQUESTS_KEY,
   type SavedLeaveDraft,
+  type LeaveRequest,
 } from "@/lib/leave-store";
 
-const INITIAL_REQUESTS_DATA = [
-  {
-    id: "req-1",
-    name: "Elena Rodriguez",
-    role: "Product Designer",
-    initials: "ER",
-    avatarBg: "bg-blue-100 text-blue-800",
-    leaveType: "Annual Leave",
-    typeColor: "bg-blue-500",
-    dates: "Oct 12 - Oct 15, 2023",
-    duration: "4 Days",
-    status: "Pending",
-  },
-  {
-    id: "req-2",
-    name: "Marcus Chen",
-    role: "Senior Engineer",
-    initials: "MC",
-    avatarBg: "bg-slate-200 text-slate-800",
-    leaveType: "Sick Leave",
-    typeColor: "bg-rose-500",
-    dates: "Oct 05 - Oct 06, 2023",
-    duration: "2 Days",
-    status: "Approved",
-  },
-  {
-    id: "req-3",
-    name: "Sarah Jenkins",
-    role: "HR Specialist",
-    initials: "SJ",
-    avatarBg: "bg-purple-100 text-purple-800",
-    leaveType: "Maternity Leave",
-    typeColor: "bg-slate-400",
-    dates: "Nov 01 - Jan 30, 2024",
-    duration: "90 Days",
-    status: "Cancelled",
-  },
-  {
-    id: "req-4",
-    name: "David Wilson",
-    role: "Sales Manager",
-    initials: "DW",
-    avatarBg: "bg-emerald-100 text-emerald-800",
-    leaveType: "Annual Leave",
-    typeColor: "bg-blue-500",
-    dates: "Sep 28 - Sep 30, 2023",
-    duration: "3 Days",
-    status: "Rejected",
-  },
-];
+// 1. ADDED IMPORTS: To check real-time employee suspension statuses
+import { getAllEmployees } from "@/lib/storage";
+import { employees as seedEmployees, type Employee } from "@/lib/mock-data";
 
 export default function LeaveManagementDashboard() {
   const [activeFilterTab, setActiveFilterTab] = useState("ALL");
   const [selectedTypeFilter, setSelectedTypeFilter] = useState("All Types");
   const [isTypeDropdownOpen, setIsTypeDropdownOpen] = useState(false);
 
-  const [requests, setRequests] = useState(INITIAL_REQUESTS_DATA);
+  // 2. STATES: Use the strictly typed hydrated requests from the store
+  const [requests, setRequests] = useState<LeaveRequest[]>([]);
+  const [activeEmployees, setActiveEmployees] = useState<Employee[]>([]);
   const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<SavedLeaveDraft[]>([]);
 
-  const refreshDraftState = () => {
+  const refreshDashboardData = () => {
     initializeLeaveDraftStorage();
     setDrafts(getLeaveDrafts());
+
+    // 3. HYDRATION: Fetch fully populated relational data (Names, Avatars) instead of raw text strings
+    const hydratedRequests = getLeaveRequests();
+    setRequests(hydratedRequests);
+
+    // Fetch live directory to check suspension statuses
+    setActiveEmployees(getAllEmployees(seedEmployees));
+  };
+
+  // Helper for Drafts sorting (defined here since we removed getLeaveDrafts from imports if it was missing)
+  const getLeaveDrafts = () => {
+    const raw = localStorage.getItem("hr_connect_leave_drafts");
+    const parsed: SavedLeaveDraft[] = raw ? JSON.parse(raw) : [];
+    return parsed.sort(
+      (a, b) =>
+        new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
+    );
   };
 
   const handleDeleteDraft = (draft: SavedLeaveDraft) => {
     const confirmed = window.confirm(
-      `Delete the saved draft for ${draft.data.employeeName.trim() || "this application"}? This cannot be undone.`,
+      `Delete the saved draft for ${draft.data.employeeId ? "this employee" : "this application"}? This cannot be undone.`,
     );
     if (!confirmed) return;
     deleteLeaveDraft(draft.id);
-    refreshDraftState();
+    refreshDashboardData();
   };
 
   useEffect(() => {
-    refreshDraftState();
-
-    const savedRequests = localStorage.getItem(LEAVE_REQUESTS_KEY);
-    if (savedRequests) {
-      setRequests(JSON.parse(savedRequests));
-    } else {
-      localStorage.setItem(
-        LEAVE_REQUESTS_KEY,
-        JSON.stringify(INITIAL_REQUESTS_DATA),
-      );
-    }
+    // 4. ON MOUNT: Load all relational data
+    refreshDashboardData();
 
     const handleFocus = () => {
-      refreshDraftState();
-      const refreshed = getLeaveRequests();
-      if (refreshed.length > 0) {
-        setRequests(refreshed);
-      }
+      refreshDashboardData();
     };
 
     window.addEventListener("focus", handleFocus);
@@ -134,7 +94,16 @@ export default function LeaveManagementDashboard() {
     });
 
     setRequests(updated);
-    localStorage.setItem(LEAVE_REQUESTS_KEY, JSON.stringify(updated));
+
+    // Write the raw update back to storage
+    const rawStorage = localStorage.getItem(LEAVE_REQUESTS_KEY);
+    if (rawStorage) {
+      const parsedRaw = JSON.parse(rawStorage);
+      const updatedRaw = parsedRaw.map((r: any) =>
+        r.id === targetId ? { ...r, status: nextStatus } : r,
+      );
+      localStorage.setItem(LEAVE_REQUESTS_KEY, JSON.stringify(updatedRaw));
+    }
   };
 
   const handleInitialActionConfirm = (
@@ -152,19 +121,16 @@ export default function LeaveManagementDashboard() {
     }
   };
 
-  // 2. LOGICAL SAFEGUARD CHECK: Checks current status before allowing updates
   const handleChangeStatusAnytimeConfirm = (
     targetId: string,
     employeeName: string,
     nextStatus: string,
   ) => {
-    // Locate the specific employee's request inside state memory
     const activeRecord = requests.find((req) => req.id === targetId);
 
-    // Safeguard: Block execution if trying to write the same status
     if (activeRecord && activeRecord.status === nextStatus) {
       alert(`This request is already set to ${nextStatus.toUpperCase()}.`);
-      return; // Exit the function immediately
+      return;
     }
 
     const confirmMessage = `WARNING: ${employeeName}'s request is already processed. \n\nAre you sure you want to modify their status to ${nextStatus.toUpperCase()}?`;
@@ -218,8 +184,8 @@ export default function LeaveManagementDashboard() {
                 Saved Application Drafts
               </h2>
               <p className="text-xs text-amber-800 mt-0.5">
-                {drafts.length} draft{drafts.length === 1 ? "" : "s"} saved locally.
-                Start a new application anytime without losing these.
+                {drafts.length} draft{drafts.length === 1 ? "" : "s"} saved
+                locally. Start a new application anytime without losing these.
               </p>
             </div>
             <Link
@@ -290,6 +256,7 @@ export default function LeaveManagementDashboard() {
       )}
 
       {/* SECTION 2: LEAVE METRICS GRID */}
+      {/* SECTION 2: LEAVE METRICS GRID */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         <div className="bg-white p-6 rounded-xl border border-slate-100 border-l-4 border-l-blue-500 shadow-sm flex flex-col justify-between h-36">
           <div className="flex items-start justify-between">
@@ -302,6 +269,7 @@ export default function LeaveManagementDashboard() {
           </div>
           <div className="space-y-1.5">
             <div className="text-3xl font-bold flex items-baseline gap-1 leading-none">
+              {/* Dynamic average or company pool could go here. Keeping standard pool for now. */}
               <span>18</span>
               <span className="text-xs font-semibold text-slate-500 lowercase">
                 days
@@ -309,7 +277,7 @@ export default function LeaveManagementDashboard() {
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold">
               <div className="w-1.5 h-1.5 rounded-full bg-blue-500" />
-              <span>22 total allocated</span>
+              <span>Avg. remaining per employee</span>
             </div>
           </div>
         </div>
@@ -332,7 +300,7 @@ export default function LeaveManagementDashboard() {
             </div>
             <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-bold">
               <div className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-              <span>10 total allocated</span>
+              <span>Avg. remaining per employee</span>
             </div>
           </div>
         </div>
@@ -349,28 +317,65 @@ export default function LeaveManagementDashboard() {
           <div className="flex items-end justify-between">
             <div className="space-y-1.5">
               <div className="text-3xl font-bold flex items-baseline gap-1 leading-none">
-                <span>92%</span>
+                {(() => {
+                  // DYNAMIC MATH: Calculate percentage based on total active employees vs approved leaves
+                  const approvedLeaves = requests.filter(
+                    (r) => r.status === "Approved",
+                  );
+                  const totalEmployees = activeEmployees.length;
+                  const presentCount = Math.max(
+                    0,
+                    totalEmployees - approvedLeaves.length,
+                  );
+                  const percentage =
+                    totalEmployees > 0
+                      ? Math.round((presentCount / totalEmployees) * 100)
+                      : 0;
+
+                  return <span>{percentage}%</span>;
+                })()}
                 <span className="text-xs font-semibold text-slate-500">
                   Present
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-bold">
-                4 members on leave today
+                {requests.filter((r) => r.status === "Approved").length} members
+                on leave
               </p>
             </div>
+
+            {/* DYNAMIC AVATARS: Renders the avatars of the actual employees on leave */}
             <div className="flex -space-x-1.5">
-              <div className="w-5 h-5 rounded-full bg-slate-200 border border-white flex items-center justify-center text-[7px] font-bold text-slate-600">
-                ER
-              </div>
-              <div className="w-5 h-5 rounded-full bg-slate-300 border border-white flex items-center justify-center text-[7px] font-bold text-slate-700">
-                MC
-              </div>
-              <div className="w-5 h-5 rounded-full bg-slate-400 border border-white flex items-center justify-center text-[7px] font-bold text-slate-800">
-                SJ
-              </div>
-              <div className="w-5 h-5 rounded-full bg-slate-900 border border-white flex items-center justify-center text-[7px] font-bold text-white shadow-xs">
-                +8
-              </div>
+              {(() => {
+                const approvedLeaves = requests.filter(
+                  (r) => r.status === "Approved",
+                );
+                if (approvedLeaves.length === 0) {
+                  return (
+                    <span className="text-[10px] text-slate-400 font-semibold">
+                      All Present
+                    </span>
+                  );
+                }
+
+                // Render up to 3 avatars
+                return approvedLeaves.slice(0, 3).map((req) => (
+                  <div
+                    key={req.id}
+                    title={req.name}
+                    className={`w-6 h-6 rounded-full border-2 border-white flex items-center justify-center text-[8px] font-bold ${req.avatarBg}`}
+                  >
+                    {req.initials}
+                  </div>
+                ));
+              })()}
+
+              {/* If more than 3 people are on leave, show a +X badge */}
+              {requests.filter((r) => r.status === "Approved").length > 3 && (
+                <div className="w-6 h-6 rounded-full bg-slate-900 border-2 border-white flex items-center justify-center text-[8px] font-bold text-white shadow-xs">
+                  +{requests.filter((r) => r.status === "Approved").length - 3}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -378,74 +383,27 @@ export default function LeaveManagementDashboard() {
 
       {/* SECTION 3: FILTER & EXPORT TOOLBAR */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-4 rounded-xl border border-slate-100 shadow-xs relative">
-        {/* Horizontal Tab Selectors */}
         <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-lg self-start gap-0.5">
-          <button
-            onClick={() => {
-              setActiveFilterTab("ALL");
-              setActiveMenuId(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              activeFilterTab === "ALL"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            All Requests
-          </button>
-          <button
-            onClick={() => {
-              setActiveFilterTab("PENDING");
-              setActiveMenuId(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              activeFilterTab === "PENDING"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Pending
-          </button>
-          <button
-            onClick={() => {
-              setActiveFilterTab("APPROVED");
-              setActiveMenuId(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              activeFilterTab === "APPROVED"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Approved
-          </button>
-          <button
-            onClick={() => {
-              setActiveFilterTab("REJECTED");
-              setActiveMenuId(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              activeFilterTab === "REJECTED"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Rejected
-          </button>
-          {/* 3. ADDED: New "Cancelled" Tab Selector Button */}
-          <button
-            onClick={() => {
-              setActiveFilterTab("CANCELLED");
-              setActiveMenuId(null);
-            }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
-              activeFilterTab === "CANCELLED"
-                ? "bg-white text-slate-900 shadow-xs"
-                : "text-slate-500 hover:text-slate-800"
-            }`}
-          >
-            Cancelled
-          </button>
+          {["ALL", "PENDING", "APPROVED", "REJECTED", "CANCELLED"].map(
+            (tab) => (
+              <button
+                key={tab}
+                onClick={() => {
+                  setActiveFilterTab(tab);
+                  setActiveMenuId(null);
+                }}
+                className={`px-3 py-1.5 text-xs font-bold rounded-md transition-all cursor-pointer ${
+                  activeFilterTab === tab
+                    ? "bg-white text-slate-900 shadow-xs"
+                    : "text-slate-500 hover:text-slate-800"
+                }`}
+              >
+                {tab === "ALL"
+                  ? "All Requests"
+                  : tab.charAt(0) + tab.slice(1).toLowerCase()}
+              </button>
+            ),
+          )}
         </div>
 
         <div className="flex items-center gap-3 self-end sm:self-center">
@@ -469,6 +427,7 @@ export default function LeaveManagementDashboard() {
                   "Annual Leave",
                   "Sick Leave",
                   "Maternity Leave",
+                  "Personal Leave",
                 ].map((type) => (
                   <button
                     key={type}
@@ -521,10 +480,16 @@ export default function LeaveManagementDashboard() {
 
                   const isPending = row.status === "Pending";
 
+                  // 5. SUSPENSION SAFEGUARD: Check if the employee profile is Suspended
+                  const employeeProfile = activeEmployees.find(
+                    (e) => e.id === row.employeeId || e.name === row.name,
+                  );
+                  const isSuspended = employeeProfile?.status === "Suspended";
+
                   return (
                     <tr
                       key={row.id}
-                      className="hover:bg-slate-50/30 transition-colors align-middle"
+                      className={`transition-colors align-middle ${isSuspended ? "bg-slate-50/50 opacity-60 grayscale-[50%]" : "hover:bg-slate-50/30"}`}
                     >
                       <td className="py-4 px-6 flex items-center gap-3">
                         <div
@@ -533,8 +498,17 @@ export default function LeaveManagementDashboard() {
                           {row.initials}
                         </div>
                         <div className="flex flex-col space-y-0.5">
-                          <span className="font-bold text-slate-800 leading-tight">
+                          <span className="font-bold text-slate-800 leading-tight flex items-center gap-1.5">
                             {row.name}
+                            {/* Warning icon if suspended */}
+                            {isSuspended && (
+                              <span
+                                title="Account Suspended"
+                                className="flex items-center"
+                              >
+                                <AlertCircle className="w-3.5 h-3.5 text-rose-500" />
+                              </span>
+                            )}
                           </span>
                           <span className="text-[10px] text-slate-400 font-semibold">
                             {row.role}
@@ -568,7 +542,11 @@ export default function LeaveManagementDashboard() {
                       </td>
 
                       <td className="py-4 px-6 text-right">
-                        {isPending ? (
+                        {isSuspended ? (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                            Locked
+                          </span>
+                        ) : isPending ? (
                           <div className="flex items-center justify-end gap-2">
                             <button
                               onClick={() =>
@@ -609,7 +587,6 @@ export default function LeaveManagementDashboard() {
                               <MoreVertical className="w-4 h-4" />
                             </button>
 
-                            {/* 4. PRESENTATION SAFEGUARD: Conditionally hide options that match the active status */}
                             {activeMenuId === row.id && (
                               <div className="absolute right-0 mt-1 w-32 bg-white border border-slate-200 rounded-lg shadow-lg z-30 py-1 text-xs font-semibold text-slate-600 text-left animate-in fade-in zoom-in-95 duration-100">
                                 {row.status !== "Approved" && (
@@ -694,7 +671,10 @@ export default function LeaveManagementDashboard() {
         </div>
 
         <div className="p-4 bg-slate-50/50 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 font-medium">
-          <span>Showing 1-4 of 24 requests</span>
+          <span>
+            Showing 1-{filteredRequests.length} of {filteredRequests.length}{" "}
+            requests
+          </span>
           <div className="flex items-center gap-1.5">
             <button className="p-1 border border-slate-200 bg-white rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-50 active:scale-95 transition-all cursor-pointer">
               <ChevronLeft className="w-4 h-4" />

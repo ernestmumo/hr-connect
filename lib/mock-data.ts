@@ -98,10 +98,25 @@ export const employees: Employee[] = [
     dateOfBirth: "June 14, 1992",
     gender: "Male",
     emergencyContacts: [
-      { name: "Elena Holloway", relationship: "Spouse", phone: "+1 (206) 555-0144" },
-      { name: "Robert Holloway", relationship: "Father", phone: "+1 (415) 555-0298" },
+      {
+        name: "Elena Holloway",
+        relationship: "Spouse",
+        phone: "+1 (206) 555-0144",
+      },
+      {
+        name: "Robert Holloway",
+        relationship: "Father",
+        phone: "+1 (415) 555-0298",
+      },
     ],
-    keySkills: ["Node.js", "React", "PostgreSQL", "AWS", "System Design", "Mentoring"],
+    keySkills: [
+      "Node.js",
+      "React",
+      "PostgreSQL",
+      "AWS",
+      "System Design",
+      "Mentoring",
+    ],
     availableTimeOffDays: 18.5,
     performanceRating: "Exceeds",
   },
@@ -115,10 +130,37 @@ export interface LeaveRequest {
   endDate: string;
   status: "Pending" | "Approved" | "Rejected" | "Cancelled";
 }
-
 export const leaveRequests: LeaveRequest[] = [
-  { id: "lr-1", employeeName: "Elena Rodriguez", leaveType: "Annual Leave", startDate: "2023-10-12", endDate: "2023-10-15", status: "Pending" },
-  { id: "lr-2", employeeName: "Marcus Chen", leaveType: "Sick Leave", startDate: "2023-10-05", endDate: "2023-10-06", status: "Approved" },
-  { id: "lr-3", employeeName: "Sarah Jenkins", leaveType: "Maternity Leave", startDate: "2023-11-01", endDate: "2024-01-30", status: "Cancelled" },
-  { id: "lr-4", employeeName: "David Wilson", leaveType: "Annual Leave", startDate: "2023-09-28", endDate: "2023-09-30", status: "Rejected" },
+  {
+    id: "lr-1",
+    employeeName: "Elena Rodriguez",
+    leaveType: "Annual Leave",
+    startDate: "2023-10-12",
+    endDate: "2023-10-15",
+    status: "Pending",
+  },
+  {
+    id: "lr-2",
+    employeeName: "Marcus Chen",
+    leaveType: "Sick Leave",
+    startDate: "2023-10-05",
+    endDate: "2023-10-06",
+    status: "Approved",
+  },
+  {
+    id: "lr-3",
+    employeeName: "Sarah Jenkins",
+    leaveType: "Maternity Leave",
+    startDate: "2023-11-01",
+    endDate: "2024-01-30",
+    status: "Cancelled",
+  },
+  {
+    id: "lr-4",
+    employeeName: "David Wilson",
+    leaveType: "Annual Leave",
+    startDate: "2023-09-28",
+    endDate: "2023-09-30",
+    status: "Rejected",
+  },
 ];

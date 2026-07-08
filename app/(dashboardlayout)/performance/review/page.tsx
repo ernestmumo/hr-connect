@@ -2,15 +2,7 @@
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import {
-  Check,
-  Star,
-  FileText,
-  Flag,
-  Plus,
-  Eye,
-  Pencil,
-} from "lucide-react";
+import { Check, Star, FileText, Flag, Plus, Eye, Pencil } from "lucide-react";
 import {
   assignEmployeeToGoal,
   DEFAULT_REVIEW_FORM,
@@ -60,10 +52,7 @@ const COMPETENCIES = [
   },
 ];
 
-const STATUS_STYLES: Record<
-  ReviewStatus | "Unsaved Changes",
-  string
-> = {
+const STATUS_STYLES: Record<ReviewStatus | "Unsaved Changes", string> = {
   "Not Started": "bg-slate-100 text-slate-600 border-slate-200",
   "In Progress": "bg-blue-50 text-blue-700 border-blue-100",
   "Draft Saved": "bg-amber-50 text-amber-700 border-amber-100",
@@ -95,9 +84,8 @@ function PerformanceReviewContent() {
   const isReadOnly = isViewDraft || isViewFinal;
   const profile = employeeId ? getEmployeeById(employeeId) : null;
 
-  const [savedSnapshot, setSavedSnapshot] = useState<ReviewFormData>(
-    DEFAULT_REVIEW_FORM,
-  );
+  const [savedSnapshot, setSavedSnapshot] =
+    useState<ReviewFormData>(DEFAULT_REVIEW_FORM);
   const [ratings, setRatings] = useState(DEFAULT_REVIEW_FORM.ratings);
   const [summary, setSummary] = useState("");
   const [achievements, setAchievements] = useState("");
@@ -107,7 +95,9 @@ function PerformanceReviewContent() {
   const [reviewStatus, setReviewStatus] = useState<ReviewStatus>("Not Started");
   const [fieldErrors, setFieldErrors] = useState<FieldErrors>({});
   const [isLoaded, setIsLoaded] = useState(false);
-  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(
+    null,
+  );
   const [showUnsavedModal, setShowUnsavedModal] = useState(false);
 
   const assignedGoals = employeeId ? getEmployeeAssignedGoals(employeeId) : [];
@@ -144,20 +134,25 @@ function PerformanceReviewContent() {
     migrateLegacyReviewStorage();
     initializeGoals();
 
-    if (!employeeId || !profile) {
+    // 1. Move the profile validation inside the effect to avoid object-reference dependency loops
+    const currentProfile = employeeId ? getEmployeeById(employeeId) : null;
+
+    if (!employeeId || !currentProfile) {
       setIsLoaded(true);
       return;
     }
 
     let snapshot: ReviewFormData;
     if (isViewFinal) {
-      snapshot =
-        getFinalReview(employeeId) ??
-        ({ ...DEFAULT_REVIEW_FORM, ratings: { ...DEFAULT_REVIEW_FORM.ratings } });
+      snapshot = getFinalReview(employeeId) ?? {
+        ...DEFAULT_REVIEW_FORM,
+        ratings: { ...DEFAULT_REVIEW_FORM.ratings },
+      };
     } else if (isViewDraft) {
-      snapshot =
-        getReviewDraft(employeeId) ??
-        ({ ...DEFAULT_REVIEW_FORM, ratings: { ...DEFAULT_REVIEW_FORM.ratings } });
+      snapshot = getReviewDraft(employeeId) ?? {
+        ...DEFAULT_REVIEW_FORM,
+        ratings: { ...DEFAULT_REVIEW_FORM.ratings },
+      };
     } else {
       snapshot = getReviewSnapshot(employeeId);
     }
@@ -166,14 +161,16 @@ function PerformanceReviewContent() {
     setReviewStatus(getReviewMeta(employeeId).status);
     refreshGoals();
     setIsLoaded(true);
-  }, [employeeId, profile, applyFormData, refreshGoals, isViewDraft, isViewFinal]);
+  }, [employeeId, applyFormData, refreshGoals, isViewDraft, isViewFinal]); // 2. 'profile' removed from dependencies
 
   useEffect(() => {
-    if (isLoaded && (!employeeId || !profile)) {
+    // 3. Move lookup inside the redirect effect as well
+    const currentProfile = employeeId ? getEmployeeById(employeeId) : null;
+
+    if (isLoaded && (!employeeId || !currentProfile)) {
       router.replace("/performance/reviews");
     }
-  }, [isLoaded, employeeId, profile, router]);
-
+  }, [isLoaded, employeeId, router]); // 4. 'profile' removed from dependencies
   const checkIsFormDirty = useCallback(() => {
     return !formsEqual(getCurrentForm(), savedSnapshot);
   }, [getCurrentForm, savedSnapshot]);
@@ -195,7 +192,9 @@ function PerformanceReviewContent() {
 
     if (!isValid) {
       setFieldErrors(errors);
-      window.alert("Complete all required review fields before saving a draft.");
+      window.alert(
+        "Complete all required review fields before saving a draft.",
+      );
       return false;
     }
 
@@ -211,7 +210,7 @@ function PerformanceReviewContent() {
     if (!employeeId || !profile) return;
 
     const payload = isReadOnly
-      ? getReviewDraft(employeeId) ?? getFinalReview(employeeId)
+      ? (getReviewDraft(employeeId) ?? getFinalReview(employeeId))
       : getCurrentForm();
 
     if (!payload) {
@@ -299,7 +298,10 @@ function PerformanceReviewContent() {
     if (!confirmed) return;
 
     deleteReviewDraft(employeeId);
-    applyFormData({ ...DEFAULT_REVIEW_FORM, ratings: { ...DEFAULT_REVIEW_FORM.ratings } });
+    applyFormData({
+      ...DEFAULT_REVIEW_FORM,
+      ratings: { ...DEFAULT_REVIEW_FORM.ratings },
+    });
     setReviewStatus("Not Started");
     setFieldErrors({});
     window.alert("Saved review data deleted.");
@@ -356,7 +358,9 @@ function PerformanceReviewContent() {
   const completionPercent = getSubmissionProgress(currentForm);
   const ratingsComplete = isRatingsComplete(currentForm);
   const narrativeComplete = isNarrativeComplete(currentForm);
-  const draftUpdatedLabel = employeeId ? getDraftUpdatedLabel(employeeId) : null;
+  const draftUpdatedLabel = employeeId
+    ? getDraftUpdatedLabel(employeeId)
+    : null;
   const savedDraftExists = employeeId ? hasSavedDraft(employeeId) : false;
   const viewDraftEmpty = isViewDraft && !savedDraftExists;
   const viewFinalEmpty = isViewFinal && reviewStatus !== "Submitted";
@@ -410,12 +414,18 @@ function PerformanceReviewContent() {
               Unsaved changes — save your draft before leaving this page.
             </p>
           )}
-          {!isReadOnly && savedDraftExists && !isDirty && reviewStatus === "Draft Saved" && (
-            <p className="text-xs font-semibold text-blue-600">
-              Saved draft restored
-              {draftUpdatedLabel ? ` (last updated ${draftUpdatedLabel})` : ""}.
-            </p>
-          )}
+          {!isReadOnly &&
+            savedDraftExists &&
+            !isDirty &&
+            reviewStatus === "Draft Saved" && (
+              <p className="text-xs font-semibold text-blue-600">
+                Saved draft restored
+                {draftUpdatedLabel
+                  ? ` (last updated ${draftUpdatedLabel})`
+                  : ""}
+                .
+              </p>
+            )}
         </div>
 
         <div className="flex items-center gap-3">
@@ -565,7 +575,9 @@ function PerformanceReviewContent() {
               </div>
               <div className="flex items-center justify-between py-3">
                 <span className="text-slate-400">Due Date</span>
-                <span className="text-rose-600 font-bold">{profile.dueDate}</span>
+                <span className="text-rose-600 font-bold">
+                  {profile.dueDate}
+                </span>
               </div>
               <div className="flex items-center justify-between py-3">
                 <span className="text-slate-400">Status</span>
@@ -585,7 +597,12 @@ function PerformanceReviewContent() {
               </h2>
               <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
                 <span>
-                  {Object.values(currentForm.ratings).filter((score) => score > 0).length}/3 competencies rated
+                  {
+                    Object.values(currentForm.ratings).filter(
+                      (score) => score > 0,
+                    ).length
+                  }
+                  /3 competencies rated
                 </span>
                 <span className="font-bold text-white">
                   {completionPercent}% Complete
@@ -621,7 +638,11 @@ function PerformanceReviewContent() {
                     <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                   )}
                 </div>
-                <span className={ratingsComplete ? "text-slate-300" : "text-white font-bold"}>
+                <span
+                  className={
+                    ratingsComplete ? "text-slate-300" : "text-white font-bold"
+                  }
+                >
                   Technical KPI Ratings
                 </span>
               </div>
@@ -640,7 +661,13 @@ function PerformanceReviewContent() {
                     <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                   )}
                 </div>
-                <span className={narrativeComplete ? "text-slate-300" : "text-white font-bold"}>
+                <span
+                  className={
+                    narrativeComplete
+                      ? "text-slate-300"
+                      : "text-white font-bold"
+                  }
+                >
                   Self-Assessment Narrative
                 </span>
               </div>
@@ -733,7 +760,9 @@ function PerformanceReviewContent() {
             <div className="space-y-5">
               <div className="space-y-1.5">
                 <div className="flex items-baseline justify-between text-xs font-bold uppercase tracking-wider text-slate-400">
-                  <label htmlFor="summary">Executive Summary of Performance *</label>
+                  <label htmlFor="summary">
+                    Executive Summary of Performance *
+                  </label>
                   <span className="text-[10px] text-slate-400 font-semibold lowercase">
                     {summary.length} / 2000 characters
                   </span>
@@ -779,7 +808,9 @@ function PerformanceReviewContent() {
                     placeholder="List 3-5 measurable wins..."
                     rows={4}
                     className={`w-full px-3.5 py-2 text-sm border rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/20 resize-none font-medium leading-relaxed ${
-                      fieldErrors.achievements ? "border-rose-300" : "border-slate-200"
+                      fieldErrors.achievements
+                        ? "border-rose-300"
+                        : "border-slate-200"
                     } ${isReadOnly ? "cursor-default bg-slate-50 text-slate-700" : ""}`}
                   />
                   {fieldErrors.achievements && (
@@ -807,7 +838,9 @@ function PerformanceReviewContent() {
                     placeholder="Identify professional growth areas..."
                     rows={4}
                     className={`w-full px-3.5 py-2 text-sm border rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/20 resize-none font-medium leading-relaxed ${
-                      fieldErrors.improvements ? "border-rose-300" : "border-slate-200"
+                      fieldErrors.improvements
+                        ? "border-rose-300"
+                        : "border-slate-200"
                     } ${isReadOnly ? "cursor-default bg-slate-50 text-slate-700" : ""}`}
                   />
                   {fieldErrors.improvements && (
@@ -844,7 +877,8 @@ function PerformanceReviewContent() {
                     )
                   : departmentGoals
                 ).map((goal) => {
-                  const isAssigned = goal.assignedEmployeeIds.includes(employeeId);
+                  const isAssigned =
+                    goal.assignedEmployeeIds.includes(employeeId);
 
                   return (
                     <div
@@ -855,7 +889,9 @@ function PerformanceReviewContent() {
                         <h3 className="text-sm font-bold text-slate-800">
                           {goal.title}
                         </h3>
-                        <p className="text-xs text-slate-400">{goal.description}</p>
+                        <p className="text-xs text-slate-400">
+                          {goal.description}
+                        </p>
                         <p className="text-[10px] font-semibold text-slate-500">
                           {goal.progress}% complete · {goal.status}
                         </p>
@@ -863,7 +899,9 @@ function PerformanceReviewContent() {
                       {!isReadOnly && (
                         <button
                           type="button"
-                          onClick={() => handleToggleGoalAssignment(goal.id, isAssigned)}
+                          onClick={() =>
+                            handleToggleGoalAssignment(goal.id, isAssigned)
+                          }
                           className={`px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider rounded-md border transition-colors cursor-pointer ${
                             isAssigned
                               ? "bg-blue-50 text-blue-700 border-blue-100 hover:bg-blue-100"
@@ -916,7 +954,9 @@ function PerformanceReviewContent() {
                   placeholder="Describe an optional objective for the next review cycle..."
                   rows={3}
                   className={`w-full px-3.5 py-2 text-sm border border-slate-200 rounded-lg focus:outline-none focus:border-blue-500 bg-slate-50/20 resize-none font-medium leading-relaxed ${
-                    isReadOnly ? "cursor-default bg-slate-50 text-slate-700" : ""
+                    isReadOnly
+                      ? "cursor-default bg-slate-50 text-slate-700"
+                      : ""
                   }`}
                 />
               </div>
@@ -1007,7 +1047,9 @@ function PerformanceReviewContent() {
       {showUnsavedModal && (
         <div className="fixed inset-0 bg-slate-950/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white w-full max-w-md rounded-xl border border-slate-100 shadow-xl p-6 space-y-4">
-            <h3 className="text-lg font-bold text-slate-900">Unsaved Changes</h3>
+            <h3 className="text-lg font-bold text-slate-900">
+              Unsaved Changes
+            </h3>
             <p className="text-sm text-slate-500 leading-relaxed">
               You have unsaved changes for {profile.name}&apos;s review. Save
               your draft before leaving, or discard the changes and continue.
